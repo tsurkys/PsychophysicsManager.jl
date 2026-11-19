@@ -1,0 +1,231 @@
+# PsychophysicsManager settings
+#
+# Settings are kept at two levels. A project's settings.toml lies in its folder
+# (or above it): data, templates, [storage], [combining], and any value of the rig
+# the project replaces. The rig's file holds what is true of this computer
+# ([display], [audio], [input], [rig], [control], [remote], [ui]):
+#   Linux    ~/.config/PsychophysicsManager/settings.toml
+#   Windows  %APPDATA%\PsychophysicsManager\settings.toml
+#   macOS    ~/Library/Application Support/PsychophysicsManager/settings.toml
+# or the file the environment variable PSYCHOPHYSICSMANAGER_SETTINGS names.
+#
+# Every key is read on its own: the nearest settings.toml from the working
+# directory upward that sets it gives its value, then the rig's file, then the
+# default. A project that sets [audio] output_device keeps the rig's other keys.
+# Copy the sections you need from this file into either.
+#
+# The operator dashboard's View > Settings shows every setting with its default
+# and the file it comes from, and writes a change back into that file, its
+# comments kept.
+
+[storage]
+
+# Directory where session files are written.
+# A relative path is resolved against the directory of this settings.toml;
+# an absolute path is used as-is. If not specified, "data" under the current
+# working directory is used. The directory is created automatically.
+data_dir = "data"
+
+# Directory of the experiment setups the operator dashboard offers: templates
+# (session files with no trials, written by its Save as Template) and scenario
+# plans. Resolved as data_dir is; "templates" if not specified.
+templates_dir = "templates"
+
+# Filename template.
+# Available tokens:
+#   {participant_id}    - participant identifier
+#   {method}            - psychophysical method name
+#   {indep_vars}        - independent variable names (joined by separator)
+#   {tags}              - session tags (joined by "_")
+#   {timestamp}         - date/time stamp
+#   {session_id}        - full UUID
+#   {short_id}          - first 8 UUID characters
+#   {stim_par.<field>}  - any stimulus parameter value, e.g. {stim_par.Ref}
+#   {ex_par.<field>}    - any experiment parameter value, e.g. {ex_par.repeats}
+#
+# Include a unique token ({short_id} or {timestamp}) so that repeated
+# sessions of the same participant and method get distinct files. If a
+# generated name would overwrite a different session, PsychophysicsManager appends
+# a short-id suffix and warns instead of destroying the existing data.
+# The name is generated once per session (at the first save) and reused
+# for every later checkpoint of that session.
+#
+# Default (if not specified):
+#   "{participant_id}_{method}({indep_vars})_{short_id}"
+#
+# Examples:
+#   "{participant_id}_{method}({indep_vars})_{short_id}"
+#     -> Diana_Adjustment(contrast)_1a2b3c4d.json
+#
+#   "{participant_id}_{method}({indep_vars})_R{ex_par.repeats}_{short_id}"
+#     -> Diana_ConstantStimuli(contrast&frequency)_R10_1a2b3c4d.json
+#
+#   "{participant_id}_{method}({indep_vars})_Ref{stim_par.Ref}_{timestamp}"
+#     -> P001_Adjustment(Diff)_Ref10.0_2026-04-15_14-30-22.json
+#
+#   "{ex_par.experiment_name}/{participant_id}/{participant_id}_{short_id}"
+#     -> Mueller-Lyer/P001/P001_1a2b3c4d.json
+#
+# A "/" of the template names a folder under data_dir, made at the first save; a
+# "/" inside a token's value (a participant id, say) becomes "_". The session
+# library reads every folder below data_dir, so sessions are found wherever the
+# template puts them.
+
+filename_template = "{participant_id}_{method}({indep_vars})_{short_id}"
+
+# Separator for joining independent variable names
+indep_vars_separator = "&"
+
+# Date/time format for the {timestamp} token
+timestamp_format = "yyyy-mm-dd_HH-MM-SS"
+
+[ui]
+
+# Language of the operator interface: the name of a file in the package's
+# locales/ directory ("en", "lt"). Text a language lacks is shown in English.
+# Changed from the dashboard's Settings view, it applies at once; changed here, it
+# is read when the interface first needs it, so restart Julia or call
+# set_ui_language!(nothing).
+language = "en"
+
+[display]
+
+# Monitor index (1, 2, 3...)
+screen_idx = 1
+
+# Optional: pick the monitor by NAME instead of index — a case-insensitive
+# fragment of the monitor name the stimulus engine prints at startup
+# (e.g. "HDMI"; on Linux the connector, not the maker's name). When set and
+# matched, this overrides screen_idx; indices reported by the graphics driver do
+# not always match the OS display order.
+# screen_name = "HDMI"
+
+# Whether to open the stimulus window in fullscreen mode
+fullscreen = true
+
+# Initial window size (ignored in fullscreen)
+width = 1200
+height = 800
+
+# Optional: the monitor of the operator dashboard, by index or by a fragment of
+# its name, chosen as the stimulus monitor is. With neither set the window system
+# places the dashboard. A window cannot be placed under native Wayland; it can
+# under XWayland, which runs the dashboard on the mainstream Linux desktops.
+# dashboard_screen_idx = 2
+# dashboard_screen_name = "DP"
+
+# Window title
+title = "PsychophysicsManager Stimulus Presentation"
+
+[rig]
+
+# The rig's name and constants. A session records them when it starts, so its
+# data read the same on another computer. Every key but name is a number, named
+# as the laboratory chooses (frame_ms, ...).
+# name = "Booth 2"
+
+# The width of a pixel of the stimulus display and the viewing distance, in
+# millimetres. pixel_arcmin, the visual angle of one pixel in minutes of arc, is
+# derived from them unless it is given.
+# pixel_pitch_mm = 0.2715
+# viewing_distance_mm = 1000
+# pixel_arcmin = 0.933
+# frame_ms = 16.667
+
+[audio]
+
+# Optional PortAudio output-device name. Leave blank to use the operating
+# system default output; inspect devices with `using PortAudio; devices()`.
+output_device = ""
+
+[input]
+
+# Seconds after a trial's onset during which a key or button press is dropped,
+# without a word: a double press, or a key still held from the previous trial,
+# then cannot answer the new trial. Only a trial's first presentation is guarded,
+# so the steps of an adjustment still follow a held key. Each session records the
+# value it started with. 0 lets every press count.
+min_response_s = 0.0
+
+[combining]
+
+# What sessions must share to be combined into one dataset (AnalysisSet).
+# Sessions are always required to share the stimulus type, the method, the
+# independent variables, the task's response coding, fit_gamma, and whether a
+# person or a program answered. Each check below adds a further fact; switch it
+# off to combine sessions that differ in it.
+
+# The verbatim wording of the task
+instructions = true
+
+# The program that answered and the settings it was queried with
+observer = true
+
+# Whether answers were followed by feedback
+feedback = true
+
+# The response window (timeout_s)
+timeout = true
+
+# Stimulus fields that are neither an independent variable nor set by the
+# method during the run (the adjusted field of an adjustment session)
+stimulus = true
+
+# [plot]
+#
+# Display options of the dashboard's Data view. Changes made in the view are
+# written into the nearest settings.toml that has a [plot] section, or into the
+# rig's per-user file when none has; add a [plot] section to a project's
+# settings.toml to keep plot options for that study alone.
+#
+# raw = true           # draw every recorded trial
+# mean = true          # draw condition means (or proportions)
+# spread = "sem"       # error bars: "none", "sd", "sem", or "ci" (95% CI)
+# smooth = false       # moving average through condition means
+# fit = true           # fitted logistic psychometric curve
+# converted = true     # apply each session's declared unit conversions
+# split = "pooled"     # ticked sessions: "pooled", "overlaid", or "panels"
+
+# [units.MarkerLayout]
+#
+# Default labels and unit conversions for a stimulus's parameters, kept per
+# project (keyed by the stimulus's name). Each entry is "<label>" or
+# "<label> = <formula>" over the parameter itself (or x), constants of [rig],
+# and fixed numeric parameters of the stimulus; the formula must be linear in
+# the parameter (or in log10 of it). Resolved when a session starts, with the
+# rig's constants, so a template made on one rig is right on the next.
+#
+# DistrN = "Number of distractors"
+# Diff   = "Illusion strength, arc min = Diff * pixel_arcmin"
+# Test   = "Illusion strength, arc min = (Ref - Test) * pixel_arcmin"
+
+# [control]
+#
+# The operator dashboard's control channel: Python or MATLAB scripts and AI agents
+# on this computer work with the open dashboard through it — see
+# PsychophysicsManager.jl/docs/CONTROL_CHANNEL.md. Off unless enabled; it listens
+# on the loopback address (127.0.0.1) only. Read when the dashboard opens.
+#
+# enabled = true
+#
+# port = 5556
+
+# [remote]
+#
+# The external presentation worker a RemoteEngine connects to: a program
+# outside Julia that owns the display and the input device (Psychtoolbox under
+# MATLAB or Octave, for example). Start the worker first — it listens, and
+# PsychophysicsManager connects. See PsychophysicsManager.jl/workers/ for a reference worker and the
+# line protocol.
+#
+# host = "127.0.0.1"
+#
+# port = 5555
+#
+# How long to wait for a worker's reply before treating its silence as a
+# dropped connection. This is the TRANSPORT's patience, not the participant's
+# response window (which the worker itself enforces), so set it a few seconds
+# above the longest response window the session will use. Omit it and a silent
+# worker blocks the session until the operator interrupts.
+#
+# read_timeout_s = 60.0

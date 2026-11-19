@@ -1,0 +1,930 @@
+<title>run_ok_experiment.jl — vykdymo žemėlapis</title>
+
+<style>
+  :root {
+    --ground:   #F3F3F7;
+    --surface:  #FFFFFF;
+    --surface-2:#ECECF2;
+    --ink:      #17171E;
+    --ink-soft: #5C5C6B;
+    --ink-faint:#8B8B99;
+    --line:     #DCDCE6;
+    --line-soft:#E9E9F0;
+    --accent:   #5B3FD0;
+    --accent-bg:#EDE9FC;
+    --backend:  #0F6F63;
+    --backend-bg:#E2F1EE;
+    --script:   #8A5A10;
+    --script-bg:#F6EDDC;
+    --shadow:   0 1px 2px rgba(23,23,30,.06), 0 8px 24px -12px rgba(23,23,30,.18);
+
+    --mono: ui-monospace, "SFMono-Regular", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:   #121218;
+      --surface:  #1A1A22;
+      --surface-2:#22222C;
+      --ink:      #E9E9F0;
+      --ink-soft: #9C9CAC;
+      --ink-faint:#71717F;
+      --line:     #2E2E3A;
+      --line-soft:#26262F;
+      --accent:   #A18CFF;
+      --accent-bg:#241E45;
+      --backend:  #4CC3B0;
+      --backend-bg:#12332F;
+      --script:   #D8A34E;
+      --script-bg:#33290F;
+      --shadow:   0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:   #121218;
+    --surface:  #1A1A22;
+    --surface-2:#22222C;
+    --ink:      #E9E9F0;
+    --ink-soft: #9C9CAC;
+    --ink-faint:#71717F;
+    --line:     #2E2E3A;
+    --line-soft:#26262F;
+    --accent:   #A18CFF;
+    --accent-bg:#241E45;
+    --backend:  #4CC3B0;
+    --backend-bg:#12332F;
+    --script:   #D8A34E;
+    --script-bg:#33290F;
+    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 10px 28px -14px rgba(0,0,0,.7);
+  }
+
+  :root[data-theme="light"] {
+    --ground:   #F3F3F7;
+    --surface:  #FFFFFF;
+    --surface-2:#ECECF2;
+    --ink:      #17171E;
+    --ink-soft: #5C5C6B;
+    --ink-faint:#8B8B99;
+    --line:     #DCDCE6;
+    --line-soft:#E9E9F0;
+    --accent:   #5B3FD0;
+    --accent-bg:#EDE9FC;
+    --backend:  #0F6F63;
+    --backend-bg:#E2F1EE;
+    --script:   #8A5A10;
+    --script-bg:#F6EDDC;
+    --shadow:   0 1px 2px rgba(23,23,30,.06), 0 8px 24px -12px rgba(23,23,30,.18);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 40px 24px 96px;
+  }
+
+  /* ---------- header ---------- */
+
+  header.masthead {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(26px, 4.2vw, 40px);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.12;
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  h1 .dim { color: var(--ink-faint); font-weight: 500; }
+
+  .lede {
+    max-width: 62ch;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    margin-top: 4px;
+  }
+
+  .key {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 5px 10px;
+  }
+
+  .swatch {
+    width: 9px; height: 9px;
+    border-radius: 1px;
+    flex: none;
+  }
+  .swatch.core    { background: var(--accent); }
+  .swatch.ext     { background: var(--backend); }
+  .swatch.example { background: var(--script); }
+
+  /* ---------- two-column shell ---------- */
+
+  .shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 316px;
+    gap: 40px;
+    align-items: start;
+    margin-top: 36px;
+  }
+
+  @media (max-width: 940px) {
+    .shell { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  }
+
+  /* ---------- stages ---------- */
+
+  .stage { margin-bottom: 44px; }
+
+  .stage-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 18px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .stage-num {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: .04em;
+    flex: none;
+  }
+
+  .stage-head h2 {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    margin: 0;
+    flex: 1;
+  }
+
+  .stage-note {
+    font-size: 12.5px;
+    color: var(--ink-faint);
+    text-align: right;
+  }
+
+  .chain {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .arrow {
+    align-self: center;
+    font-family: var(--mono);
+    color: var(--ink-faint);
+    font-size: 14px;
+    flex: none;
+    user-select: none;
+  }
+
+  .rung {
+    height: 16px;
+    margin-left: 22px;
+    border-left: 1px solid var(--line);
+  }
+
+  /* ---------- node ---------- */
+
+  .node {
+    appearance: none;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 3px;
+    padding: 9px 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    box-shadow: var(--shadow);
+    transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  }
+
+  .node:hover { transform: translateY(-1px); background: var(--surface-2); }
+  .node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .node[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--accent); }
+
+  .node .sym {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -.01em;
+    word-break: break-word;
+  }
+
+  .node .where {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+  }
+
+  .node.ext     { border-left-color: var(--backend); }
+  .node.ext[aria-pressed="true"] { background: var(--backend-bg); border-color: var(--backend); }
+  .node.example { border-left-color: var(--script); }
+  .node.example[aria-pressed="true"] { background: var(--script-bg); border-color: var(--script); }
+
+  .node.plain {
+    border-left-color: var(--line);
+    box-shadow: none;
+    background: transparent;
+    cursor: default;
+  }
+  .node.plain:hover { transform: none; background: transparent; }
+
+  /* ---------- loop block ---------- */
+
+  .loopbox {
+    border: 1px dashed var(--line);
+    border-radius: 4px;
+    padding: 16px 16px 12px;
+    margin: 14px 0 6px;
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+    position: relative;
+  }
+
+  .loopbox > .loop-label {
+    position: absolute;
+    top: -9px;
+    left: 14px;
+    background: var(--ground);
+    padding: 0 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  .branch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--ink-soft);
+    padding: 8px 0 8px 22px;
+  }
+
+  .branch .tag {
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 2px 7px;
+    font-size: 11px;
+    color: var(--ink);
+    background: var(--surface);
+    white-space: nowrap;
+  }
+
+  .feedback {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 3px;
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .02em;
+  }
+
+  /* ---------- detail rail ---------- */
+
+  .rail {
+    position: sticky;
+    top: 24px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 18px;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  @media (max-width: 940px) {
+    .rail { position: static; }
+  }
+
+  .rail-eyebrow {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  #detail-sym {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -.01em;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  .path {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-soft);
+    border-radius: 3px;
+    padding: 8px 10px;
+    color: var(--ink);
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  #detail-body {
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  .pill {
+    align-self: flex-start;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    border-radius: 2px;
+    padding: 3px 8px;
+  }
+  .pill.core    { background: var(--accent-bg);  color: var(--accent); }
+  .pill.ext     { background: var(--backend-bg); color: var(--backend); }
+  .pill.example { background: var(--script-bg);  color: var(--script); }
+
+  /* ---------- file map ---------- */
+
+  .map {
+    margin-top: 8px;
+    border-top: 1px solid var(--line);
+    padding-top: 34px;
+  }
+
+  .map h2 {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0 0 4px;
+  }
+
+  .map p.sub {
+    margin: 0 0 20px;
+    color: var(--ink-soft);
+    font-size: 14px;
+    max-width: 62ch;
+  }
+
+  .table-scroll { overflow-x: auto; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 560px;
+    font-size: 14px;
+  }
+
+  thead th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+    padding: 0 12px 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  tbody td {
+    padding: 9px 12px 9px 0;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+
+  tbody tr:hover td { background: var(--surface-2); }
+
+  td.file {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  td.file .grp { color: var(--ink-faint); }
+
+  .zone {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .zone.core    { color: var(--accent); }
+  .zone.ext     { color: var(--backend); }
+  .zone.example { color: var(--script); }
+
+  /* ---------- closing note ---------- */
+
+  .principle {
+    margin-top: 40px;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--backend);
+    border-radius: 3px;
+    background: var(--surface);
+    padding: 18px 20px;
+  }
+
+  .principle h3 {
+    font-family: var(--mono);
+    font-size: 13px;
+    margin: 0 0 6px;
+    letter-spacing: -.01em;
+  }
+
+  .principle p {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 14px;
+    max-width: 68ch;
+  }
+
+  code {
+    font-family: var(--mono);
+    font-size: .92em;
+    background: var(--surface-2);
+    border-radius: 2px;
+    padding: 1px 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">PsychophysicsManager.jl · vykdymo žemėlapis</div>
+    <h1>run_ok_experiment.jl <span class="dim">→ ką iš tikrųjų kviečia</span></h1>
+    <p class="lede">
+      Šešios eilutės skripte išskleidžia visą paketą. Spustelėk bet kurį mazgą — dešinėje
+      (mobiliajame — apačioje) pasirodys failo kelias, eilutė ir ką ta vieta atlieka.
+    </p>
+    <div class="legend">
+      <span class="key"><span class="swatch example"></span>examples/ — skriptai ir konfigūracija</span>
+      <span class="key"><span class="swatch core"></span>src/ — headless branduolys</span>
+      <span class="key"><span class="swatch ext"></span>ext/ — backend'ai (grafika, garsas)</span>
+    </div>
+  </header>
+
+  <div class="shell">
+    <main>
+
+      <!-- ============ STAGE 1 ============ -->
+      <section class="stage">
+        <div class="stage-head">
+          <span class="stage-num">01</span>
+          <h2>Paleidimas — skripto eilutės iš eilės</h2>
+          <span class="stage-note">examples/run_ok_experiment.jl</span>
+        </div>
+
+        <div class="chain">
+          <div class="row">
+            <button class="node example" data-sym="_example_setup.jl"
+              data-path="examples/_example_setup.jl"
+              data-zone="example"
+              data-desc="Pkg.activate(examples/), cd() į paketo šaknį, wait_for_enter(), pagalbinės funkcijos saugotų sesijų failams rasti. Darbinis katalogas prisegamas, nes PsychophysicsManager settings.toml ir data/ ieško nuo pwd().">
+              <span class="sym">include _example_setup.jl</span>
+              <span class="where">examples/ · eil. 5</span>
+            </button>
+          </div>
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node" data-sym="using PsychophysicsManager"
+              data-path="src/PsychophysicsManager.jl"
+              data-zone="core"
+              data-desc="Modulio surinkimas: include'ina Core → Methods → Stimuli → IO → API → Analytics → loop, paskelbia export'us ir užregistruoja įtaisytus metodų / stimulų / variklių tipus.">
+              <span class="sym">using PsychophysicsManager</span>
+              <span class="where">src/PsychophysicsManager.jl · eil. 7</span>
+            </button>
+            <span class="arrow">+</span>
+            <button class="node ext" data-sym="using GLMakie"
+              data-path="ext/PsychophysicsManagerGLMakieExt.jl:571"
+              data-zone="ext"
+              data-desc="GLMakie įkėlimas aktyvuoja package extension. Jo __init__ iškviečia register_engine_type!(GeometryVisualEngine) — tik nuo šios akimirkos branduolys apskritai žino apie vizualų variklį.">
+              <span class="sym">using GLMakie</span>
+              <span class="where">→ ext/…GLMakieExt.jl · eil. 8</span>
+            </button>
+          </div>
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node example" data-sym="create_ok_session"
+              data-path="examples/_ok_experiment_setup.jl"
+              data-zone="example"
+              data-desc="OK4 konfigūracija vienoje vietoje: Ref = 240.0, DistrN ∈ 0:5, 2 pakartojimai. Sudeda StimulusParams + ExperimentParameters + Adjustment(dep_var = :Diff, dep_range = -120:120) į SessionContext.">
+              <span class="sym">create_ok_session(participant_id)</span>
+              <span class="where">examples/ · eil. 12</span>
+            </button>
+          </div>
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node" data-sym="StimulusParams"
+              data-path="src/Stimuli/geometry.jl"
+              data-zone="core"
+              data-desc="Geometrinio stimulo parametrai (StimConfig, Ref, DistrN, Diff, Marker, Anchor…) ir calculate_coordinates — koordinačių skaičiavimas be jokios grafikos.">
+              <span class="sym">StimulusParams</span>
+              <span class="where">Stimuli/geometry.jl</span>
+            </button>
+            <button class="node" data-sym="SessionContext"
+              data-path="src/Core/session.jl"
+              data-zone="core"
+              data-desc="Sesijos būsena: dalyvis, ex_par, stim_par, method_instance, history::Vector{Trial}, current_trial_idx, state (READY / RUNNING / PAUSED / ABORTED / FINISHED), engine_name, tags.">
+              <span class="sym">SessionContext · ExperimentParameters</span>
+              <span class="where">Core/session.jl</span>
+            </button>
+            <button class="node" data-sym="Adjustment"
+              data-path="src/Methods/adjustment.jl:75"
+              data-zone="core"
+              data-desc="Reguliavimo metodas: dalyvis pats keičia dep_var (:Diff) klavišais, kol patvirtina. Be init_interval kiekvienas bandymas prasideda nuo stim_par.Diff — kaip originaliame OK4.">
+              <span class="sym">Adjustment</span>
+              <span class="where">Methods/adjustment.jl</span>
+            </button>
+          </div>
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node" data-sym="run_experiment!(session)"
+              data-path="src/Core/loop.jl"
+              data-zone="core"
+              data-desc="Aukšto lygio perkrova — pati susiranda variklį, konfigūraciją ir po darbo jį uždaro. Detalės žemiau, 02 etape.">
+              <span class="sym">run_experiment!(session)</span>
+              <span class="where">Core/loop.jl · eil. 13</span>
+            </button>
+          </div>
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node" data-sym="print_adjustment_summary"
+              data-path="src/Analytics/processing.jl:59"
+              data-zone="core"
+              data-desc="Suvestinė konsolėje: agreguoja history pagal nepriklausomą kintamąjį (get_aggregated_data) ir atspausdina vidurkius bei nuokrypius.">
+              <span class="sym">print_adjustment_summary</span>
+              <span class="where">Analytics/processing.jl · eil. 15</span>
+            </button>
+            <span class="arrow">→</span>
+            <button class="node ext" data-sym="visualize_results"
+              data-path="ext/PsychophysicsManagerMakieExt.jl:165"
+              data-zone="ext"
+              data-desc="Grafikas. src/ turi tik stub'ą (Core/extension_stubs.jl) su užuomina, kurį backend'ą įkelti; tikra realizacija gyvena Makie extension'e ir reguliavimo sesijoms kviečia plot_adjustment_results (eil. 103).">
+              <span class="sym">visualize_results</span>
+              <span class="where">ext/…MakieExt.jl · eil. 16</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STAGE 2 ============ -->
+      <section class="stage">
+        <div class="stage-head">
+          <span class="stage-num">02</span>
+          <h2>run_experiment!(session) — variklio parinkimas</h2>
+          <span class="stage-note">src/Core/loop.jl, paskutinė funkcija</span>
+        </div>
+
+        <div class="chain">
+          <div class="row">
+            <button class="node ext" data-sym="default_engine_type(stim_par)"
+              data-path="ext/PsychophysicsManagerGLMakieExt.jl:150"
+              data-zone="ext"
+              data-desc="StimulusParams → GeometryVisualEngine. Metodas apibrėžtas extension'e; src/Stimuli/interface.jl:60 turi tik fallback'ą, kuris meta klaidą su nuoroda „įkelk backend'ą“.">
+              <span class="sym">default_engine_type</span>
+              <span class="where">ext/…GLMakieExt.jl:150</span>
+            </button>
+            <span class="arrow">→</span>
+            <button class="node" data-sym="load_display_config()"
+              data-path="src/IO/storage.jl:65"
+              data-zone="core"
+              data-desc="Ieško artimiausio settings.toml aukštyn nuo pwd() ir nuskaito jo [display] sekciją — monitorių, dydį, fullscreen. Šiame projekte tai PsychophysicsManager.jl/settings.toml.">
+              <span class="sym">load_display_config()</span>
+              <span class="where">IO/storage.jl:65</span>
+            </button>
+          </div>
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node ext" data-sym="initialize_engine"
+              data-path="ext/PsychophysicsManagerGLMakieExt.jl:38"
+              data-zone="ext"
+              data-desc="Sukuria GeometryVisualEngine ir per setup_geometry_window! (eil. 53) atidaro GLMakie langą pasirinktame monitoriuje, paruošia scenos observable'us ir klavišų klausymą.">
+              <span class="sym">initialize_engine → setup_geometry_window!</span>
+              <span class="where">ext/…GLMakieExt.jl:38, :53</span>
+            </button>
+          </div>
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node" data-sym="run_experiment!(session, engine)"
+              data-path="src/Core/loop.jl"
+              data-zone="core"
+              data-desc="Žemesnio lygio perkrova su konkrečiu varikliu. Įrašo session.engine_name, prikabina konsolės reporterį, jei reikia — start_session!, ir sukasi, kol būsena nustoja būti RUNNING/PAUSED.">
+              <span class="sym">run_experiment!(session, engine)</span>
+              <span class="where">Core/loop.jl</span>
+            </button>
+            <span class="arrow">⟳</span>
+            <button class="node plain" data-noclick="1">
+              <span class="sym">finally: close_engine!(engine)</span>
+              <span class="where">langą uždaro ta perkrova, kuri jį atidarė</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STAGE 3 ============ -->
+      <section class="stage">
+        <div class="stage-head">
+          <span class="stage-num">03</span>
+          <h2>Pagrindinė kilpa ir vienas bandymas</h2>
+          <span class="stage-note">run_next_trial! · src/Core/loop.jl</span>
+        </div>
+
+        <div class="chain">
+          <div class="row">
+            <button class="node" data-sym="attach_console_reporter!"
+              data-path="src/API/reporting.jl:86"
+              data-zone="core"
+              data-desc="Prikabina klausytoją, kuris į konsolę rašo sesijos antraštę, kiekvieno bandymo eilutę ir pabaigos žinutę. Lygiai: :silent, :session, :trials (numatytasis), :steps. Kilpai baigus — detach_listener!.">
+              <span class="sym">attach_console_reporter!(level = :trials)</span>
+              <span class="where">API/reporting.jl:86</span>
+            </button>
+            <span class="arrow">→</span>
+            <button class="node" data-sym="start_session!"
+              data-path="src/API/commands.jl"
+              data-zone="core"
+              data-desc="READY → RUNNING. Čia pat gyvena pause!, resume!, abort!, undo_last_trial!, mark_outlier! — visos operatoriaus komandos.">
+              <span class="sym">start_session! (jei READY)</span>
+              <span class="where">API/commands.jl</span>
+            </button>
+          </div>
+
+          <div class="loopbox">
+            <span class="loop-label">while RUNNING · run_next_trial!</span>
+
+            <div class="chain">
+              <div class="row">
+                <button class="node" data-sym="get_next_trial_params"
+                  data-path="src/Methods/adjustment.jl:106"
+                  data-zone="core"
+                  data-desc="Metodas nusprendžia, ką rodyti — grąžina nepriklausomų kintamųjų reikšmes šiam bandymui (čia: kitą DistrN iš 0:5 tvarkaraščio).">
+                  <span class="sym">1 · get_next_trial_params</span>
+                  <span class="where">Methods/adjustment.jl:106</span>
+                </button>
+                <span class="arrow">→</span>
+                <button class="node" data-sym="apply_variables! / apply_method_state!"
+                  data-path="src/Methods/interface.jl · adjustment.jl:156"
+                  data-zone="core"
+                  data-desc="Reikšmės įrašomos į stim_par, o apply_method_state! papildomai įrašo einamąją reguliuojamo kintamojo (:Diff) reikšmę — tai, ką dalyvis ką tik pakeitė.">
+                  <span class="sym">2 · apply_variables! → apply_method_state!</span>
+                  <span class="where">Methods/interface.jl, adjustment.jl:156</span>
+                </button>
+              </div>
+              <div class="rung"></div>
+
+              <div class="row">
+                <button class="node ext" data-sym="present_stimulus"
+                  data-path="ext/PsychophysicsManagerGLMakieExt.jl:152"
+                  data-zone="ext"
+                  data-desc="Vienintelė vieta, kur kas nors nupiešiama. Perskaičiuoja koordinates, atnaujina sceną, gaudo klavišus ir grąžina PresentationResult (onset, atsakas, laikas) — bet kuris laukas gali būti nothing.">
+                  <span class="sym">3 · present_stimulus(engine, stim_par, vals)</span>
+                  <span class="where">ext/…GLMakieExt.jl:152</span>
+                </button>
+              </div>
+
+              <div class="branch">
+                <span class="tag">atsakas == nothing?</span>
+                <span class="arrow">→</span>
+                <button class="node" data-sym="request_response"
+                  data-path="src/Stimuli/interface.jl · Stimuli/interactive.jl"
+                  data-zone="core"
+                  data-desc="Jei variklis tik piešia, atsakas imamas iš ACTIVE_RESPONSE_SOURCE — konsolės arba dashboard'o šaltinio (pastarasis apibrėžtas ext/…GLMakieExt.jl:217). Keičiamas su set_response_source!.">
+                  <span class="sym">request_response(ACTIVE_RESPONSE_SOURCE[])</span>
+                  <span class="where">Stimuli/interface.jl</span>
+                </button>
+              </div>
+
+              <div class="row">
+                <button class="node" data-sym="update_method_state!"
+                  data-path="src/Methods/adjustment.jl:132"
+                  data-zone="core"
+                  data-desc="Metodas suvartoja atsaką: reguliavime tai žingsnis į viršų/žemyn dep_range = -120:120 ribose arba patvirtinimas. Po to klausiama is_trial_finished.">
+                  <span class="sym">4 · update_method_state!(method, response)</span>
+                  <span class="where">Methods/adjustment.jl:132</span>
+                </button>
+              </div>
+
+              <div class="feedback">
+                ↩ jei bandymas dar nebaigtas → notify :response_registered → grįžtama į 1 žingsnį
+              </div>
+            </div>
+          </div>
+
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node" data-sym="Trial"
+              data-path="src/Core/session.jl"
+              data-zone="core"
+              data-desc="Įrašomas patvirtintas rezultatas: bandymo indeksas, onset (PIRMOS prezentacijos, engine arba estimated), atsako laikas, reikšmės, get_trial_result. Stumiama į session.history.">
+              <span class="sym">5 · Trial(...) → push!(session.history)</span>
+              <span class="where">Core/session.jl</span>
+            </button>
+            <span class="arrow">→</span>
+            <button class="node" data-sym="is_experiment_finished"
+              data-path="src/Methods/adjustment.jl:151"
+              data-zone="core"
+              data-desc="current_trial_idx += 1 PRIEŠ checkpoint'ą, kad diske gulėtų tikra po-bandyminė būsena; jei visi bandymai atlikti — state = FINISHED.">
+              <span class="sym">6 · idx += 1 · is_experiment_finished?</span>
+              <span class="where">Methods/adjustment.jl:151</span>
+            </button>
+            <span class="arrow">→</span>
+            <button class="node" data-sym="save_session_checkpoint"
+              data-path="src/IO/storage.jl:389"
+              data-zone="core"
+              data-desc="JSON snapshot'as po kiekvieno bandymo į resolve_data_dir() (storage.jl:101) — katalogą, nurodytą settings.toml [storage], kitaip data/ šalia darbinio katalogo.">
+              <span class="sym">7 · save_session_checkpoint</span>
+              <span class="where">IO/storage.jl:389</span>
+            </button>
+          </div>
+          <div class="rung"></div>
+
+          <div class="row">
+            <button class="node plain" data-noclick="1">
+              <span class="sym">notify :trial_completed → konsolės eilutė; jei FINISHED — :state_changed ir kilpa nutrūksta</span>
+              <span class="where">Core/loop.jl · API/reporting.jl</span>
+            </button>
+          </div>
+
+          <div class="branch" style="padding-left:0; margin-top:14px;">
+            <span class="tag">Ctrl-C arba klaida</span>
+            <span class="arrow">→</span>
+            <span>abort! (API/commands.jl) išsaugo ABORTED būseną; reporteris atkabinamas <code>finally</code> bloke bet kuriuo atveju.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ FILE MAP ============ -->
+      <section class="map">
+        <h2>Failų žemėlapis</h2>
+        <p class="sub">Keliai nuo <code>PsychophysicsManager.jl/</code>. Trys zonos skiriasi ne tik vieta, bet ir taisyklėmis: <code>examples/</code> keičiasi laisvai, <code>src/</code> privalo likti be grafikos, <code>ext/</code> įsijungia tik įkėlus backend'ą.</p>
+
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Vaidmuo</th>
+                <th>Failas</th>
+                <th>Zona</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Paleidimo skriptas</td><td class="file"><span class="grp">examples/</span>run_ok_experiment.jl</td><td class="zone example">examples</td></tr>
+              <tr><td>Bendras skriptų setup: Pkg.activate, cd, wait_for_enter</td><td class="file"><span class="grp">examples/</span>_example_setup.jl</td><td class="zone example">examples</td></tr>
+              <tr><td>OK4 konfigūracija — create_ok_session</td><td class="file"><span class="grp">examples/</span>_ok_experiment_setup.jl</td><td class="zone example">examples</td></tr>
+              <tr><td>Modulio surinkimas, export'ai, tipų registracijos</td><td class="file"><span class="grp">src/</span>PsychophysicsManager.jl</td><td class="zone core">src</td></tr>
+              <tr><td>SessionContext, ExperimentParameters, Trial</td><td class="file"><span class="grp">src/Core/</span>session.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Vykdymo kilpa — run_experiment!, run_next_trial!</td><td class="file"><span class="grp">src/Core/</span>loop.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Tipų registrai ir backend'ų užuominos</td><td class="file"><span class="grp">src/Core/</span>registry.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Extension'ų stub'ai su įkėlimo nuorodomis</td><td class="file"><span class="grp">src/Core/</span>extension_stubs.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Metodų sąsaja (bendri kontraktai)</td><td class="file"><span class="grp">src/Methods/</span>interface.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Reguliavimo metodas — šio eksperimento</td><td class="file"><span class="grp">src/Methods/</span>adjustment.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Stimulų sąsaja, initialize_engine išsprendimas</td><td class="file"><span class="grp">src/Stimuli/</span>interface.jl</td><td class="zone core">src</td></tr>
+              <tr><td>StimulusParams, calculate_coordinates</td><td class="file"><span class="grp">src/Stimuli/</span>geometry.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Komandos: start_session!, pause!, abort!, undo…</td><td class="file"><span class="grp">src/API/</span>commands.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Konsolės ataskaitos ir įvykių klausytojai</td><td class="file"><span class="grp">src/API/</span>reporting.jl</td><td class="zone core">src</td></tr>
+              <tr><td>settings.toml, checkpoint'ai, resolve_data_dir</td><td class="file"><span class="grp">src/IO/</span>storage.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Eksportas į CSV/TSV</td><td class="file"><span class="grp">src/IO/</span>export.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Agregavimas, print_adjustment_summary</td><td class="file"><span class="grp">src/Analytics/</span>processing.jl</td><td class="zone core">src</td></tr>
+              <tr><td>Vizualus variklis: langas, present_stimulus, dashboard</td><td class="file"><span class="grp">ext/</span>PsychophysicsManagerGLMakieExt.jl</td><td class="zone ext">ext</td></tr>
+              <tr><td>Grafikai: visualize_results, plot_adjustment_results</td><td class="file"><span class="grp">ext/</span>PsychophysicsManagerMakieExt.jl</td><td class="zone ext">ext</td></tr>
+              <tr><td>Garso variklis — temporal Oppel-Kundt</td><td class="file"><span class="grp">ext/</span>PsychophysicsManagerAudioExt.jl</td><td class="zone ext">ext</td></tr>
+              <tr><td>Konfigūracija: [display], [storage], [audio]</td><td class="file">settings.toml</td><td class="zone example">root</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="principle">
+          <h3>Kodėl grafikos nerasi src/ kataloge</h3>
+          <p>
+            Branduolys sąmoningai headless: jokių GLMakie ar PortAudio priklausomybių. Vizualus variklis,
+            operatoriaus dashboard'as ir grafikai įsijungia tik tada, kai skriptas parašo <code>using GLMakie</code>
+            (garsui — <code>using PortAudio, SampledSignals</code>). Todėl ieškant, kur kas nors nupiešiama,
+            teisingas katalogas visada yra <code>ext/</code>, o <code>src/Core/extension_stubs.jl</code> tik pasako, ko trūksta.
+          </p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- ============ RAIL ============ -->
+    <aside class="rail" aria-live="polite">
+      <div class="rail-eyebrow">Pasirinkta vieta</div>
+      <span class="pill core" id="detail-pill">src</span>
+      <p id="detail-sym">run_ok_experiment.jl</p>
+      <div class="path" id="detail-path">examples/run_ok_experiment.jl</div>
+      <p id="detail-body">Spustelėk bet kurį mazgą schemoje — čia pasirodys jo failas, eilutė ir vaidmuo.</p>
+    </aside>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const nodes = document.querySelectorAll(".node[data-path]");
+    const symEl  = document.getElementById("detail-sym");
+    const pathEl = document.getElementById("detail-path");
+    const bodyEl = document.getElementById("detail-body");
+    const pillEl = document.getElementById("detail-pill");
+
+    const zoneLabel = { core: "src", ext: "ext", example: "examples" };
+
+    nodes.forEach(function (node) {
+      node.setAttribute("aria-pressed", "false");
+      node.addEventListener("click", function () {
+        nodes.forEach(function (n) { n.setAttribute("aria-pressed", "false"); });
+        node.setAttribute("aria-pressed", "true");
+
+        const zone = node.dataset.zone || "core";
+        symEl.textContent  = node.dataset.sym;
+        pathEl.textContent = node.dataset.path;
+        bodyEl.textContent = node.dataset.desc;
+        pillEl.textContent = zoneLabel[zone];
+        pillEl.className   = "pill " + zone;
+      });
+    });
+  })();
+</script>

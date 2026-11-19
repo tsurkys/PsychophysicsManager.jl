@@ -1,0 +1,3 @@
+# LF on every platform: a stimulus file's recorded sha256 (src/Presentation/identity.jl)
+# must not depend on the checkout's line endings
+* text=auto eol=lf

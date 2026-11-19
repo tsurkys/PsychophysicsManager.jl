@@ -1,0 +1,22 @@
+# Experiment data (results are data, not source), and the setups a laboratory keeps
+/data/
+/templates/
+
+# The rig's own settings (see settings.toml.example)
+/settings.toml
+
+# Dear ImGui window layout, written wherever a window was opened
+imgui.ini
+
+# The session library's cache, written in every directory it browses
+.pem-library-index
+
+# Julia coverage artifacts
+*.jl.cov
+*.jl.mem
+lcov.info
+
+# OS and tool noise
+.DS_Store
+Thumbs.db
+__pycache__/
