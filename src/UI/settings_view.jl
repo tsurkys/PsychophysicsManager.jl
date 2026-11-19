@@ -61,6 +61,11 @@ end
 interface_languages() = sort!([first(splitext(file)) for file in readdir(LOCALE_DIRECTORY)
                                if endswith(file, ".toml")])
 
+setting_choices(section::AbstractString, key::AbstractString) =
+    (section, key) == ("ui", "language") ? interface_languages() :
+    (section, key) == ("display", "presentation_mode") ? collect(string.(PRESENTATION_MODES)) :
+    String[]
+
 """
     dashboard_settings(directory = ".") -> Vector{SettingsSectionRows}
 
@@ -90,8 +95,7 @@ function dashboard_settings(directory::AbstractString = ".")
                        in_file = source !== nothing, source = source, replaces = replaced,
                        required = spec.required,
                        tip = setting_tip(name, spec.key),
-                       choices = (name, spec.key) == ("ui", "language") ?
-                                 interface_languages() : String[])
+                       choices = setting_choices(name, spec.key))
         end
         SettingsSectionRows(name, new_setting_target(name, directory), rows)
     end
@@ -178,6 +182,11 @@ function write_dashboard_setting!(controller::DashboardController, section::Abst
         new_value = value()
         path = write_settings!(section, Dict{String, Any}(key => new_value); target)
         section == "ui" && set_ui_language!(nothing)
+        if section == "display" && key == "presentation_mode" &&
+           controller.presentation_mode_override === nothing &&
+           (controller.session === nothing || controller.session.state == READY)
+            controller.presentation_mode = settings_presentation_mode()
+        end
         set_message!(controller, new_value === nothing ?
                      ui_label(:msg_setting_reset; section, key, path) :
                      ui_label(:msg_setting_saved; section, key, path))

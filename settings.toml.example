@@ -114,6 +114,13 @@ height = 800
 # dashboard_screen_idx = 2
 # dashboard_screen_name = "DP"
 
+# Presentation mode: "dual_screen" (default) keeps the dashboard and stimulus
+# window active side by side; "single_screen" hides the dashboard during each
+# trial so the stimulus window holds exclusive focus and input, shows the
+# remaining trial count between trials, and restores controls between trials or
+# when the session pauses, stops, or ends.
+# presentation_mode = "dual_screen"
+
 # Window title
 title = "PsychophysicsManager Stimulus Presentation"
 

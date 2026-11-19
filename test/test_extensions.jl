@@ -114,6 +114,7 @@ const has_display = Sys.iswindows() || Sys.isapple() ||
         @test !isopen(windowless) && !windowless.closable
         @test close_engine!(windowless) === nothing
         @test close_engine!(windowless) === nothing
+        @test PsychophysicsManager.focus_stimulus_window!() === nothing
     end
 
     @testset "A windowless engine forwards present_message to active response source" begin
@@ -302,23 +303,80 @@ using CImGui, ImPlot   # GLMakie has loaded GLFW and ModernGL, which CImGui draw
         dashboard = open_operator_dashboard(session)
         try
             @test isopen(dashboard)
+            @test dashboard.controller.presentation_mode === :dual_screen
             @test_throws ArgumentError open_operator_dashboard(session)
             @test PsychophysicsManager.ACTIVE_RESPONSE_SOURCE[] isa PsychophysicsManager.ChannelResponseSource
             timedwait(() -> dashboard.frames >= 5, 30.0)
             @test dashboard.frames >= 5
+            # Dual-screen preserves current behaviour even while a trial is under way
+            session.state = RUNNING
+            session.trial_under_way = true
             # A session event only marks the view out of date; the frame rereads
             push!(session.history, Trial(1, 0.0, 0.1, [2.0], 1, true))
             PsychophysicsManager.notify_session_listeners(session, :history_changed)
             @test dashboard.stale
             timedwait(() -> !dashboard.stale, 10.0)
+            @test !dashboard.single_screen_yielded
             @test length(dashboard.rows) == 1
         finally
+            session.trial_under_way = false
+            session.state = READY
             close(dashboard)
             wait(dashboard)
         end
         @test !isopen(dashboard)
         @test PsychophysicsManager.ACTIVE_RESPONSE_SOURCE[] === before
         @test dashboard.controller.session === nothing
+
+        # Single-screen mode: keyword validated, yields during a trial (skips redraws),
+        # and restores controls on a state change or between trials
+        @test_throws ArgumentError open_operator_dashboard(session; presentation_mode = :invalid)
+        single_session = SessionContext("Single", ExperimentParameters("ImGuiSingle", :level,
+                                                                       [1.0, 2.0, 3.0], 1),
+                                        BaseStimulusParameters(100.0), ConstantStimuli())
+        single_dash = open_operator_dashboard(single_session; presentation_mode = :single_screen)
+        try
+            @test isopen(single_dash)
+            @test single_dash.controller.presentation_mode === :single_screen
+            timedwait(() -> single_dash.frames >= 3, 30.0)
+            @test single_dash.frames >= 3
+            @test !single_dash.single_screen_yielded
+
+            single_session.state = RUNNING
+            single_session.trial_under_way = true
+            timedwait(() -> single_dash.single_screen_yielded, 10.0)
+            @test single_dash.single_screen_yielded
+            # While yielded the frame skips rereading and redrawing
+            push!(single_session.history, Trial(1, 0.0, 0.1, [2.0], 1, true))
+            PsychophysicsManager.notify_session_listeners(single_session, :history_changed)
+            @test single_dash.stale
+            sleep(0.15)
+            @test single_dash.stale
+
+            # State change restores controls immediately and rereads the session
+            single_session.state = PAUSED
+            single_session.trial_under_way = false
+            timedwait(() -> !single_dash.single_screen_yielded && !single_dash.stale, 10.0)
+            @test !single_dash.single_screen_yielded
+            @test !single_dash.stale
+            @test length(single_dash.rows) == 1
+
+            # Returning between trials while still RUNNING restores controls after the grace period
+            single_session.state = RUNNING
+            single_session.trial_under_way = true
+            timedwait(() -> single_dash.single_screen_yielded, 10.0)
+            @test single_dash.single_screen_yielded
+            single_session.trial_under_way = false
+            timedwait(() -> !single_dash.single_screen_yielded, 10.0)
+            @test !single_dash.single_screen_yielded
+        finally
+            single_session.trial_under_way = false
+            single_session.state = READY
+            close(single_dash)
+            wait(single_dash)
+        end
+        @test !isopen(single_dash)
+        @test PsychophysicsManager.ACTIVE_RESPONSE_SOURCE[] === before
 
         # A window still open at exit is closed before GLFW.jl's own exit hook
         # terminates the library under it (Julia runs the later-registered hook first)

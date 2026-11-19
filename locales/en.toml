@@ -31,6 +31,7 @@ add_comment = "Add"
 comment_hint = "A note about this session"
 progress_open = "Valid trials: {done}"
 progress_planned = "Valid trials: {done} / {total}"
+trials_remaining = "Trials remaining: {count}"
 
 # ── Session states ───────────────────────────────────────────────────────────
 state_ready = "READY"
@@ -383,6 +384,7 @@ tip_setting_display_height = "The stimulus window's height in pixels when it doe
 tip_setting_display_title = "The title of the stimulus window."
 tip_setting_display_dashboard_screen_idx = "The monitor of this dashboard, by number. With neither this nor dashboard_screen_name set, the window system places the dashboard. Applies when the dashboard is next opened."
 tip_setting_display_dashboard_screen_name = "Part of the dashboard monitor's name; it takes precedence over dashboard_screen_idx."
+tip_setting_display_presentation_mode = "How the stimulus window and this dashboard share displays: \"dual_screen\" keeps both active; \"single_screen\" hides this dashboard and gives the stimulus window exclusive focus during each trial, returning controls between trials or on pause, stop or finish."
 tip_setting_audio_output_device = "The sound output's name as PortAudio lists it; empty for the system's default output."
 tip_setting_rig_name = "The name of this computer with its displays and devices. A session records it with the rig's constants."
 tip_setting_rig_pixel_pitch_mm = "The width of one pixel of the stimulus display in millimetres."

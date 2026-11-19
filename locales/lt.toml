@@ -29,6 +29,7 @@ add_comment = "Pridėti"
 comment_hint = "Pastaba apie šią sesiją"
 progress_open = "Galiojantys bandymai: {done}"
 progress_planned = "Galiojantys bandymai: {done} / {total}"
+trials_remaining = "Liko bandymų: {count}"
 
 # ── Session states ───────────────────────────────────────────────────────────
 state_ready = "PARUOŠTA"
@@ -381,6 +382,7 @@ tip_setting_display_height = "Stimulų lango aukštis taškais, kai langas neuž
 tip_setting_display_title = "Stimulų lango pavadinimas."
 tip_setting_display_dashboard_screen_idx = "Šio pulto monitorius pagal numerį. Jei nenurodytas nei jis, nei dashboard_screen_name, pultą padeda langų sistema. Galioja kitą kartą atidarius pultą."
 tip_setting_display_dashboard_screen_name = "Pulto monitoriaus pavadinimo dalis; turi pirmenybę prieš dashboard_screen_idx."
+tip_setting_display_presentation_mode = "Kaip stimulų langas ir šis pultas dalijasi ekranais: \"dual_screen\" abu laiko aktyvius; \"single_screen\" bandymo metu paslepia šį pultą ir atiduoda fokusą stimulų langui, o tarp bandymų ar pristabdžius, sustabdžius ar baigus sesiją valdiklius grąžina."
 tip_setting_audio_output_device = "Garso išvesties pavadinimas, kaip jį išvardija PortAudio; tuščia – sistemos numatytoji išvestis."
 tip_setting_rig_name = "Šio kompiuterio su jo ekranais ir įrenginiais pavadinimas. Sesija jį įrašo kartu su darbo vietos konstantomis."
 tip_setting_rig_pixel_pitch_mm = "Vieno stimulų ekrano pikselio plotis milimetrais."

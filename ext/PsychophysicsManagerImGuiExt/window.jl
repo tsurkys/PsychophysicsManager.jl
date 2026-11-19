@@ -122,6 +122,11 @@ mutable struct DashboardWindow
     # The control channel for scripts and AI agents, while the settings turn it on
     control::Union{Nothing, ControlChannel}
     source::Union{Nothing, ChannelResponseSource}
+    # Single-screen mode: whether the dashboard window is currently yielded (hidden,
+    # polling-only, no input) to the stimulus window, and when a RUNNING session last
+    # left a trial/message so consecutive trials do not flash the dashboard between them
+    single_screen_yielded::Bool
+    single_screen_release_at::Union{Nothing, Float64}
 end
 
 function DashboardWindow(controller::DashboardController)
@@ -143,7 +148,8 @@ function DashboardWindow(controller::DashboardController)
         Set{String}(), nothing, 0.0,
         text_buffer(""), false, nothing, false,
         Ref(false), false, true, SettingsSectionRows[], String[], Dict{String, String}(),
-        Dict{String, Vector{UInt8}}(), Set{String}(), nothing, nothing, nothing, nothing, nothing)
+        Dict{String, Vector{UInt8}}(), Set{String}(), nothing, nothing, nothing, nothing, nothing,
+        false, nothing)
 end
 
 Base.isopen(dashboard::DashboardWindow) =
@@ -157,7 +163,7 @@ request_close!(dashboard::DashboardWindow) =
 Base.wait(dashboard::DashboardWindow) = (dashboard.task === nothing || wait(dashboard.task); nothing)
 
 """
-    open_operator_dashboard(session::SessionContext; update_policy = :continuous)
+    open_operator_dashboard(session::SessionContext; update_policy = :continuous, presentation_mode = nothing)
 
 Opens the operator dashboard on a session the calling script has already set up,
 and returns at once with the window, which keeps running beside the script. The
@@ -176,6 +182,10 @@ being typed in.
 `:minimal` only state changes and the operator's corrections. It can be changed
 from the View menu.
 
+`presentation_mode` (`:dual_screen` or `:single_screen`, defaulting to `[display]
+presentation_mode` in `settings.toml`, `:dual_screen` when unset) controls whether
+the dashboard yields focus and skips redraws during each trial for single-monitor setups.
+
 With `[control] enabled = true` in the settings, scripts and AI agents on this machine
 work with the dashboard through its control channel while it is open
 (`docs/CONTROL_CHANNEL.md`).
@@ -184,11 +194,12 @@ Returns the dashboard: `isopen(dashboard)` tells whether its window is still ope
 `close(dashboard)` closes it and `wait(dashboard)` waits until it is closed. A window
 still open when Julia exits is closed first.
 """
-open_operator_dashboard(session::SessionContext; update_policy::Symbol = :continuous) =
-    open_operator_dashboard(DashboardController(session; update_policy))
+open_operator_dashboard(session::SessionContext; update_policy::Symbol = :continuous,
+                        presentation_mode::Union{Nothing, Symbol} = nothing) =
+    open_operator_dashboard(DashboardController(session; update_policy, presentation_mode))
 
 """
-    open_operator_dashboard(; update_policy = :continuous)
+    open_operator_dashboard(; update_policy = :continuous, presentation_mode = nothing)
 
 Opens the operator dashboard with no session. A saved session is loaded from the
 window as a fresh replication for the participant entered there, and runs from the
@@ -197,8 +208,9 @@ of its own, and closes the engine when the session ends.
 A scenario plan in the templates directory runs from the window too, one run after
 another, each for the participant the plan names ([`choose_scenario!`](@ref)).
 """
-open_operator_dashboard(; update_policy::Symbol = :continuous) =
-    open_operator_dashboard(DashboardController(; update_policy))
+open_operator_dashboard(; update_policy::Symbol = :continuous,
+                        presentation_mode::Union{Nothing, Symbol} = nothing) =
+    open_operator_dashboard(DashboardController(; update_policy, presentation_mode))
 
 function open_operator_dashboard(controller::DashboardController)
     previous = OPEN_DASHBOARD[]
@@ -280,6 +292,60 @@ function close_dashboard_at_exit()
     return nothing
 end
 
+# Brief delay before showing the dashboard again while a session is still RUNNING
+# between trials: prevents a 1-frame flash between consecutive trials of `run_experiment!`
+# while restoring controls immediately on any state change (PAUSED, ABORTED, FINISHED, READY).
+const SINGLE_SCREEN_SHOW_DELAY_S = 0.1
+
+function focus_glfw_window!(window::GLFW.Window)
+    window.handle == C_NULL && return nothing
+    try
+        GLFW.GetWindowAttrib(window, GLFW.ICONIFIED) != 0 && GLFW.RestoreWindow(window)
+        ccall((:glfwFocusWindow, GLFW.libglfw), Cvoid, (Ptr{Cvoid},), window.handle)
+    catch err
+        # Native Wayland forbids focusing a window without user interaction
+        @warn "Could not focus dashboard window" exception = err
+    end
+    return nothing
+end
+
+# Single-screen window transitions in one place: hides the dashboard and focuses the
+# stimulus window during a trial (or stimulus-side message), and restores the dashboard
+# between trials or on a state change. Returns whether this frame must yield (poll only).
+function apply_presentation_mode!(dashboard::DashboardWindow, window::GLFW.Window)
+    controller = dashboard.controller
+    pres = dashboard_presentation_state(controller; source = dashboard.source)
+    if pres.stimulus_focused
+        dashboard.single_screen_release_at = nothing
+        dashboard.typing = false
+        if !dashboard.single_screen_yielded
+            dashboard.single_screen_yielded = true
+            GLFW.HideWindow(window)
+            Base.invokelatest(focus_stimulus_window!)
+        end
+        return true
+    end
+
+    if dashboard.single_screen_yielded
+        session = controller.session
+        if session !== nothing && session.state == RUNNING
+            now = time()
+            if dashboard.single_screen_release_at === nothing
+                dashboard.single_screen_release_at = now
+                return true
+            elseif now - dashboard.single_screen_release_at < SINGLE_SCREEN_SHOW_DELAY_S
+                return true
+            end
+        end
+        dashboard.single_screen_yielded = false
+        dashboard.single_screen_release_at = nothing
+        GLFW.ShowWindow(window)
+        focus_glfw_window!(window)
+        dashboard.stale = true
+    end
+    return false
+end
+
 function draw_frame!(dashboard::DashboardWindow)
     dashboard.frames += 1
     dashboard.frames == 1 && (place_on_monitor!(); set_window_icon!(); scale_to_display!(dashboard))
@@ -292,6 +358,8 @@ function draw_frame!(dashboard::DashboardWindow)
         GLFW.SetWindowShouldClose(window, false)
         request_close!(dashboard)
     end
+
+    apply_presentation_mode!(dashboard, window) && return nothing
 
     forward_response_keys!(dashboard)
     ig.IsKeyPressed(ig.lib.ImGuiKey_F5, false) && refresh!(dashboard)

@@ -1,4 +1,24 @@
 """
+    PRESENTATION_MODES
+
+How the stimulus window and the operator dashboard share displays (`[display]
+presentation_mode` in `settings.toml`):
+
+- `:dual_screen` (default) — both windows stay active side by side;
+- `:single_screen` — during a trial the stimulus window holds exclusive focus and
+  input while the dashboard yields (hidden, polling-only), returning controls
+  between trials or on a session state change.
+"""
+const PRESENTATION_MODES = (:dual_screen, :single_screen)
+
+function check_presentation_mode(mode::Symbol)
+    mode in PRESENTATION_MODES && return mode
+    throw(ArgumentError(
+        "Unknown presentation mode $(repr(mode)); the modes are " *
+        join(repr.(PRESENTATION_MODES), ", ") * "."))
+end
+
+"""
     DisplayConfig
 
 Hardware and window configuration for stimulus presentation. It describes the
@@ -20,14 +40,37 @@ mutable struct DisplayConfig
     # window system places the dashboard
     dashboard_screen_idx::Union{Nothing, Int}
     dashboard_screen_name::String
+    presentation_mode::Symbol
+
+    function DisplayConfig(screen_idx::Integer, screen_name::AbstractString,
+                           fullscreen::Bool, window_size::Tuple{Int, Int},
+                           title::AbstractString,
+                           dashboard_screen_idx::Union{Nothing, Int},
+                           dashboard_screen_name::AbstractString,
+                           presentation_mode::Symbol = :dual_screen)
+        return new(Int(screen_idx), String(screen_name), fullscreen, window_size,
+                   String(title), dashboard_screen_idx, String(dashboard_screen_name),
+                   check_presentation_mode(presentation_mode))
+    end
 end
 
 function DisplayConfig(; screen_idx=1, screen_name="", fullscreen=false,
                        window_size=(1200, 800), title="PsychophysicsManager Stimulus",
-                       dashboard_screen_idx=nothing, dashboard_screen_name="")
+                       dashboard_screen_idx=nothing, dashboard_screen_name="",
+                       presentation_mode::Symbol=:dual_screen)
     return DisplayConfig(screen_idx, screen_name, fullscreen, window_size, title,
-                         dashboard_screen_idx, dashboard_screen_name)
+                         dashboard_screen_idx, dashboard_screen_name, presentation_mode)
 end
+
+"""
+    focus_stimulus_window!()
+
+Raises and focuses the active stimulus window on the current display backend without
+moving, recreating, or reinitializing it. No-op when headless or no visual window is
+open; the visual-engine extension adds the backend method.
+"""
+focus_stimulus_window!() = focus_stimulus_window!(ACTIVE_DISPLAY_BACKEND[])
+focus_stimulus_window!(::DisplayBackend) = nothing
 
 """
     select_monitor_index(monitor_names, screen_idx, screen_name) -> Int

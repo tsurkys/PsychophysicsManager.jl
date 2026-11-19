@@ -13,6 +13,48 @@ PsychophysicsManager.close_engine!(engine::PreviewWindowEngine) = (engine.open =
 Base.isopen(engine::PreviewWindowEngine) = engine.open
 register_engine_type!(PreviewWindowEngine)
 
+# A headless engine that reads its own keys and records participant messages, for
+# testing single-screen inter-trial remaining-trials display without a window.
+mutable struct SingleScreenMessageEngine <: PsychophysicsManager.AbstractStimulusEngine
+    controller::Union{Nothing, DashboardController}
+    log::Vector{Tuple{Symbol, String, Bool, Bool}}
+    SingleScreenMessageEngine(controller = nothing) =
+        new(controller, Tuple{Symbol, String, Bool, Bool}[])
+end
+PsychophysicsManager.initialize_engine(::Type{SingleScreenMessageEngine},
+                                       ::AbstractStimulusParameters,
+                                       ::DisplayConfig) = SingleScreenMessageEngine()
+PsychophysicsManager.reads_response_keys(::SingleScreenMessageEngine) = true
+PsychophysicsManager.present_stimulus(::SingleScreenMessageEngine,
+                                      ::AbstractStimulusParameters,
+                                      ::AbstractVector{<:Number}) = 1
+function PsychophysicsManager.present_message(engine::SingleScreenMessageEngine,
+                                              msg::ParticipantMessage)
+    flagged = engine.controller !== nothing && engine.controller.inter_trial_message
+    push!(engine.log, (msg.kind, msg.text, msg.dismissible, flagged))
+    return nothing
+end
+register_engine_type!(SingleScreenMessageEngine)
+
+# A windowless render-only engine (like AudioStimulusEngine): no keys of its own, no display
+struct WindowlessRenderEngine <: PsychophysicsManager.AbstractStimulusEngine end
+PsychophysicsManager.present_stimulus(::WindowlessRenderEngine,
+                                      ::AbstractStimulusParameters,
+                                      ::AbstractVector{<:Number}) = nothing
+
+# An open-ended method whose planned trial count is unknown
+struct OpenEndedUIStubMethod <: AbstractPsychoMethod end
+PsychophysicsManager.initialize_method!(::OpenEndedUIStubMethod, ::ExperimentParameters;
+                                        rng = Random.default_rng()) = nothing
+PsychophysicsManager.is_experiment_finished(::OpenEndedUIStubMethod) = false
+
+# Minimal stand-in for DashboardWindow in headless `run_when_started!` tests
+struct MockSingleScreenDashboard
+    controller::DashboardController
+    open::Ref{Bool}
+end
+Base.isopen(d::MockSingleScreenDashboard) = d.open[]
+
 # Operator-UI layer. Everything here is headless by design:
 # these are the dashboard's rules and wording, tested without opening a window.
 
@@ -2357,6 +2399,10 @@ register_engine_type!(PreviewWindowEngine)
                 @test !row("display", "width").in_file
                 @test row("display", "dashboard_screen_idx").default == "not set"
                 @test row("display", "screen_name").default == "empty"
+                @test row("display", "presentation_mode").value == "dual_screen"
+                @test row("display", "presentation_mode").default == "dual_screen"
+                @test row("display", "presentation_mode").choices == ["dual_screen", "single_screen"]
+                @test row("display", "presentation_mode").tip == :tip_setting_display_presentation_mode
                 @test row("storage", "data_dir").value == "data"
                 @test row("remote", "port").default == "required"
                 @test isempty(unread_settings()) && PsychophysicsManager.unread_settings_text() === nothing
@@ -2396,6 +2442,19 @@ register_engine_type!(PreviewWindowEngine)
                                                                     "fullscreen")
                 @test !load_display_config().fullscreen
                 @test occursin("default", controller.message)
+                # presentation_mode updates via Settings and refuses unknown modes
+                @test PsychophysicsManager.edit_dashboard_setting!(controller, "display",
+                                                                   "presentation_mode",
+                                                                   "single_screen")
+                @test load_display_config().presentation_mode === :single_screen
+                @test controller.presentation_mode === :single_screen
+                @test !PsychophysicsManager.edit_dashboard_setting!(controller, "display",
+                                                                    "presentation_mode",
+                                                                    "triple_screen")
+                @test PsychophysicsManager.reset_dashboard_setting!(controller, "display",
+                                                                    "presentation_mode")
+                @test load_display_config().presentation_mode === :dual_screen
+                @test controller.presentation_mode === :dual_screen
                 # A section no file defines goes to the file chosen for it
                 @test PsychophysicsManager.edit_dashboard_setting!(
                     controller, "audio", "output_device", "Laboratory Output"; target = path)
@@ -2788,6 +2847,260 @@ register_engine_type!(PreviewWindowEngine)
                     @test ui_label(:view_plot) == "Duomenys"
                 finally
                     set_ui_language!("en")
+                end
+            end
+        end
+    end
+
+    @testset "Single-screen presentation mode" begin
+        pres = PsychophysicsManager.dashboard_presentation_state
+        active = (controls_visible = true, skip_redraw = false,
+                  accept_input = true, stimulus_focused = false)
+        yielded = (controls_visible = false, skip_redraw = true,
+                   accept_input = false, stimulus_focused = true)
+
+        @testset "Pure mode-to-dashboard-state transitions" begin
+            # Invalid mode is refused
+            @test_throws ArgumentError pres(:triple_screen, RUNNING, true)
+
+            # :dual_screen keeps the dashboard active in every state and trial phase
+            for state in (nothing, READY, RUNNING, PAUSED, ABORTED, FINISHED),
+                trial_under_way in (false, true),
+                stimulus_message in (false, true)
+                @test pres(:dual_screen, state, trial_under_way; stimulus_message) == active
+            end
+
+            # :single_screen yields during a trial (RUNNING + trial_under_way) and restores
+            # controls between trials and on every state change (pause, abort/stop, finish)
+            @test pres(:single_screen, nothing, false) == active
+            @test pres(:single_screen, READY, false) == active
+            @test pres(:single_screen, RUNNING, false) == active       # before / between trials
+            @test pres(:single_screen, RUNNING, true) == yielded       # trial start
+            @test pres(:single_screen, RUNNING, false) == active       # trial end / abandoned
+            @test pres(:single_screen, PAUSED, true) == active         # paused mid-trial
+            @test pres(:single_screen, PAUSED, false) == active        # paused between trials
+            @test pres(:single_screen, ABORTED, true) == active        # stopped/aborted mid-trial
+            @test pres(:single_screen, ABORTED, false) == active       # stopped/aborted
+            @test pres(:single_screen, FINISHED, false) == active      # finished
+
+            # Stimulus-side participant messages (instructions, inter-trial count,
+            # participant-dismissible break, closing text) keep stimulus focus until
+            # ended or aborted
+            @test pres(:single_screen, RUNNING, false; stimulus_message = true) == yielded
+            @test pres(:single_screen, PAUSED, false; stimulus_message = true) == yielded
+            @test pres(:single_screen, FINISHED, false; stimulus_message = true) == yielded
+            @test pres(:single_screen, ABORTED, false; stimulus_message = true) == active
+
+            # A windowless render-only engine (e.g. audio) relies on the dashboard keyboard
+            @test pres(:single_screen, RUNNING, true; stimulus_owns_focus = false) == active
+        end
+
+        @testset "Controller mode selection and live session transitions" begin
+            @test_throws ArgumentError DashboardController(; presentation_mode = :invalid)
+            mktempdir() do dir
+                cd(dir) do
+                    # Defaults to :dual_screen when unset in settings.toml
+                    @test DashboardController().presentation_mode === :dual_screen
+                    write("settings.toml", "[display]\npresentation_mode = \"single_screen\"\n")
+                    @test DashboardController().presentation_mode === :single_screen
+                    # Explicit keyword overrides settings.toml
+                    @test DashboardController(; presentation_mode = :dual_screen).presentation_mode ===
+                          :dual_screen
+                end
+            end
+
+            session = make_session()
+            controller = DashboardController(session; presentation_mode = :single_screen)
+            channel = Channel{Tuple{Int, Float64}}(1)
+            source = PsychophysicsManager.ChannelResponseSource(channel)
+            @test pres(controller; source) == active
+
+            # Trial start -> yielded; trial end -> active
+            start_session!(session)
+            @test pres(controller; source) == active
+            session.trial_under_way = true
+            @test pres(controller; source) == yielded
+            session.trial_under_way = false
+            @test pres(controller; source) == active
+
+            # Pause and abort restore controls even if trial_under_way was still raised
+            session.trial_under_way = true
+            pause!(session)
+            @test pres(controller; source) == active
+            resume!(session)
+            @test pres(controller; source) == yielded
+            abort!(session)
+            @test pres(controller; source) == active
+            session.trial_under_way = false
+
+            # Participant message routing: stimulus-side dismissible message yields,
+            # operator-only break and dashboard-source messages keep controls visible
+            session2 = make_session()
+            start_session!(session2)
+            ctrl2 = DashboardController(session2; presentation_mode = :single_screen)
+            instr = ParticipantMessage(:instructions, "Read this", true, 0.0, () -> true)
+            session2.shown_message = instr
+            @test pres(ctrl2; source) == yielded
+            # When the dashboard's own response source is displaying the message, controls stay
+            source.message[] = instr
+            @test pres(ctrl2; source) == active
+            source.message[] = nothing
+            # Operator-dismissible break needs the dashboard's Resume button
+            pause!(session2)
+            session2.shown_message = ParticipantMessage(:break, "Wait", false, 0.0, () -> true)
+            @test pres(ctrl2; source) == active
+            # Participant-dismissible break yields to the stimulus window
+            session2.shown_message = ParticipantMessage(:break, "Rest", true, 0.0, () -> true)
+            @test pres(ctrl2; source) == yielded
+            session2.shown_message = nothing
+            @test pres(ctrl2; source) == active
+
+            # Windowless render-only engine never hides the dashboard
+            resume!(session2)
+            session2.trial_under_way = true
+            session2.trial_run = PsychophysicsManager.TrialRun(current_task(),
+                                                               WindowlessRenderEngine())
+            @test !PsychophysicsManager.engine_takes_focus(WindowlessRenderEngine())
+            @test PsychophysicsManager.engine_takes_focus(SingleScreenMessageEngine())
+            @test pres(ctrl2; source) == active
+            session2.trial_run = nothing
+            session2.trial_under_way = false
+        end
+
+        @testset "Remaining trials between trials" begin
+            @test PsychophysicsManager.remaining_valid_trials(nothing) === nothing
+            @test PsychophysicsManager.format_remaining_trials(nothing) == ""
+
+            mktempdir() do dir
+                cd(dir) do
+                    write("settings.toml", "[storage]\ndata_dir = \"out\"\n")
+                    session = make_session()   # 3 levels × 2 repeats = 6 trials
+                    @test PsychophysicsManager.remaining_valid_trials(session) == 6
+                    @test PsychophysicsManager.format_remaining_trials(session) ==
+                          "Trials remaining: 6"
+
+                    start_session!(session)
+                    run_next_trial!(session, EmulatorEngine())
+                    @test PsychophysicsManager.remaining_valid_trials(session) == 5
+                    @test PsychophysicsManager.format_remaining_trials(session) ==
+                          "Trials remaining: 5"
+
+                    # Undo re-queues the trial: remaining count goes back up by 1
+                    @test undo_last_trial!(session) == 1
+                    @test PsychophysicsManager.remaining_valid_trials(session) == 6
+
+                    # Mark outlier lowers planned valid trials by 1 (remaining unchanged)
+                    run_next_trial!(session, EmulatorEngine())
+                    @test PsychophysicsManager.remaining_valid_trials(session) == 5
+                    @test mark_outlier!(session, 2)
+                    @test PsychophysicsManager.remaining_valid_trials(session) == 5
+
+                    # Lithuanian localization
+                    try
+                        set_ui_language!("lt")
+                        @test PsychophysicsManager.format_remaining_trials(session) ==
+                              "Liko bandymų: 5"
+                    finally
+                        set_ui_language!("en")
+                    end
+
+                    # Finishing leaves 0 remaining and an empty display line
+                    while session.state == RUNNING
+                        run_next_trial!(session, EmulatorEngine())
+                    end
+                    @test PsychophysicsManager.remaining_valid_trials(session) == 0
+                    @test PsychophysicsManager.format_remaining_trials(session) == ""
+                end
+            end
+
+            # Open-ended method with unknown planned count shows nothing
+            open_s = SessionContext("Open", ExperimentParameters("Open", :x, [1.0], 1),
+                                    BaseStimulusParameters(10.0), OpenEndedUIStubMethod())
+            @test PsychophysicsManager.remaining_valid_trials(open_s) === nothing
+            @test PsychophysicsManager.format_remaining_trials(open_s) == ""
+        end
+
+        @testset "Participant screen receives remaining-trials messages in :single_screen" begin
+            mktempdir() do dir
+                cd(dir) do
+                    write("settings.toml", "[storage]\ndata_dir = \"out\"\n")
+
+                    # Single-screen run via run_when_started! shows remaining trials after
+                    # trials 1 and 2 of a 3-trial session, never after the final trial, and
+                    # still calls any caller-supplied on_trial_end hook
+                    s3 = SessionContext("P1", ExperimentParameters("Three", :level, [1.0, 2.0, 3.0], 1),
+                                        BaseStimulusParameters(10.0), ConstantStimuli())
+                    ctrl = DashboardController(s3; presentation_mode = :single_screen)
+                    engine = SingleScreenMessageEngine(ctrl)
+                    dash = MockSingleScreenDashboard(ctrl, Ref(true))
+                    seen_trials = Int[]
+                    start_session!(s3)
+                    run_when_started!(s3, engine, dash; report = :silent,
+                                      on_trial_end = s -> push!(seen_trials, length(s.history)))
+                    @test s3.state == FINISHED
+                    @test !ctrl.inter_trial_message
+                    @test seen_trials == [1, 2, 3]
+                    @test engine.log == [
+                        (:inter_trial, "Trials remaining: 2", false, true),
+                        (:inter_trial, "Trials remaining: 1", false, true),
+                    ]
+
+                    # Scheduled break skips a redundant remaining-trials flash before the break
+                    s_break = SessionContext("P2", ExperimentParameters("Brk", :level, [1.0, 2.0, 3.0], 1),
+                                             BaseStimulusParameters(10.0), ConstantStimuli())
+                    set_messages!(s_break; break_after = [1], break_text = "Short break")
+                    ctrl_b = DashboardController(s_break; presentation_mode = :single_screen)
+                    eng_b = SingleScreenMessageEngine(ctrl_b)
+                    dash_b = MockSingleScreenDashboard(ctrl_b, Ref(true))
+                    start_session!(s_break)
+                    run_when_started!(s_break, eng_b, dash_b; report = :silent)
+                    @test s_break.state == FINISHED
+                    @test eng_b.log == [
+                        (:break, "Short break", true, false),
+                        (:inter_trial, "Trials remaining: 1", false, true),
+                    ]
+
+                    # :dual_screen preserves existing behaviour: no inter-trial messages
+                    s_dual = SessionContext("P3", ExperimentParameters("Dual", :level, [1.0, 2.0, 3.0], 1),
+                                            BaseStimulusParameters(10.0), ConstantStimuli())
+                    ctrl_d = DashboardController(s_dual; presentation_mode = :dual_screen)
+                    eng_d = SingleScreenMessageEngine(ctrl_d)
+                    dash_d = MockSingleScreenDashboard(ctrl_d, Ref(true))
+                    start_session!(s_dual)
+                    run_when_started!(s_dual, eng_d, dash_d; report = :silent)
+                    @test s_dual.state == FINISHED
+                    @test isempty(eng_d.log)
+                end
+            end
+        end
+
+        @testset "Settings view exposes presentation_mode choices and applies before start" begin
+            mktempdir() do dir
+                cd(dir) do
+                    write("settings.toml", "[display]\nfullscreen = false\n")
+                    sections = PsychophysicsManager.dashboard_settings()
+                    disp = only(filter(s -> s.name == "display", sections))
+                    pm_row = only(filter(r -> r.key == "presentation_mode", disp.rows))
+                    @test pm_row.value == "dual_screen"
+                    @test pm_row.default == "dual_screen"
+                    @test pm_row.choices == ["dual_screen", "single_screen"]
+
+                    ctrl = DashboardController()
+                    @test ctrl.presentation_mode === :dual_screen
+                    @test PsychophysicsManager.edit_dashboard_setting!(
+                        ctrl, "display", "presentation_mode", "single_screen")
+                    @test ctrl.presentation_mode === :single_screen
+                    @test !PsychophysicsManager.edit_dashboard_setting!(
+                        ctrl, "display", "presentation_mode", "invalid_mode")
+                    @test ctrl.presentation_mode === :single_screen
+
+                    # Changing the setting while a session is running does not touch the active run
+                    s_run = make_session()
+                    start_session!(s_run)
+                    PsychophysicsManager.bind_session!(ctrl, s_run)
+                    @test PsychophysicsManager.edit_dashboard_setting!(
+                        ctrl, "display", "presentation_mode", "dual_screen")
+                    @test ctrl.presentation_mode === :single_screen
                 end
             end
         end

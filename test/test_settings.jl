@@ -40,7 +40,8 @@ using TOML
             "ui" => Dict("language" => "lt"),
             "display" => Dict("screen_idx" => 3, "screen_name" => "DELL", "fullscreen" => false,
                               "width" => 1600, "height" => 900, "title" => "Stimulus \"A\"",
-                              "dashboard_screen_idx" => 2, "dashboard_screen_name" => "EIZO"),
+                              "dashboard_screen_idx" => 2, "dashboard_screen_name" => "EIZO",
+                              "presentation_mode" => "single_screen"),
             "audio" => Dict("output_device" => "Laboratory Output"),
             "input" => Dict("min_response_s" => 0.3),
             "combining" => Dict("instructions" => false, "observer" => true,
@@ -73,6 +74,7 @@ using TOML
             @test display.window_size == (1600, 900)
             @test display.title == "Stimulus \"A\""
             @test (display.dashboard_screen_idx, display.dashboard_screen_name) == (2, "EIZO")
+            @test display.presentation_mode === :single_screen
             @test load_audio_output_device(dir) == "Laboratory Output"
             @test load_combining_checks(dir) == [:observer, :timeout, :stimulus]
             @test load_plot_options(dir) == PlotOptions(raw = false, mean = true, spread = :ci,
@@ -155,6 +157,8 @@ using TOML
             write(path, HANDWRITTEN)
             refused = [("display", "width", 0), ("display", "screen_idx", "2"),
                        ("display", "fullscreen", "yes"), ("display", "no_such_key", 1),
+                       ("display", "presentation_mode", "triple_screen"),
+                       ("display", "presentation_mode", 1),
                        ("storage", "data_dir", "  "), ("ui", "language", ""),
                        ("combining", "observer", 1), ("remote", "port", 70000),
                        ("remote", "read_timeout_s", 0)]
@@ -533,6 +537,46 @@ using TOML
                 err = try load_plot_options(project); nothing catch e; e end
                 @test err isa ArgumentError
                 @test occursin("spread", err.msg) && occursin(project, err.msg)
+            end
+        end
+    end
+
+    @testset "Display presentation_mode validation and defaulting" begin
+        @test DisplayConfig().presentation_mode === :dual_screen
+        @test DisplayConfig(presentation_mode = :dual_screen).presentation_mode === :dual_screen
+        @test DisplayConfig(presentation_mode = :single_screen).presentation_mode === :single_screen
+        @test_throws ArgumentError DisplayConfig(presentation_mode = :triple_screen)
+
+        mktempdir() do dir
+            user = joinpath(dir, "rig", "settings.toml")
+            with_user_file(user) do
+                # Unset defaults to :dual_screen
+                @test load_display_config(dir).presentation_mode === :dual_screen
+
+                path = joinpath(dir, "settings.toml")
+                write(path, "[display]\npresentation_mode = \"single_screen\"\n")
+                @test load_display_config(dir).presentation_mode === :single_screen
+                @test isempty(unread_settings(dir))
+
+                write(path, "[display]\npresentation_mode = \"dual_screen\"\n")
+                @test load_display_config(dir).presentation_mode === :dual_screen
+
+                # Invalid string or non-string refused by loader, naming directory and key
+                for bad in ("\"single\"", "\"\"", "true", "2")
+                    write(path, "[display]\npresentation_mode = $bad\n")
+                    failure = try load_display_config(dir); nothing catch err; err end
+                    @test failure isa ArgumentError
+                    @test occursin(dir, failure.msg) && occursin("presentation_mode", failure.msg)
+                end
+
+                # Round-trip and reset through write_settings!
+                write(path, "[display]\n# presentation_mode = \"dual_screen\"\n")
+                @test PEM.write_settings!("display", Dict("presentation_mode" => "single_screen");
+                                          directory = dir) == path
+                @test load_display_config(dir).presentation_mode === :single_screen
+                @test PEM.write_settings!("display", Dict("presentation_mode" => nothing);
+                                          directory = dir) == path
+                @test load_display_config(dir).presentation_mode === :dual_screen
             end
         end
     end

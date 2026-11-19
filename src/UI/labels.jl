@@ -39,6 +39,35 @@ function format_dashboard_progress(session::SessionContext)
 end
 
 """
+    remaining_valid_trials(session) -> Union{Int, Nothing}
+
+How many valid trials remain before `session` finishes, counted as
+[`planned_valid_trials`](@ref) and the Control progress bar count them
+(`max(planned - valid, 0)`), or `nothing` for an open-ended method or before a
+session is loaded.
+"""
+remaining_valid_trials(::Nothing) = nothing
+
+function remaining_valid_trials(session::SessionContext)
+    total = planned_valid_trials(session)
+    total === nothing && return nothing
+    done = count(t -> t.is_valid, session.history)
+    return max(total - done, 0)
+end
+
+"""
+    format_remaining_trials(session) -> String
+
+The line shown on the participant's screen between trials in single-screen mode
+(e.g. `"Trials remaining: 7"`), or `""` when the planned count is unknown or none remain.
+"""
+function format_remaining_trials(session::Union{Nothing, SessionContext})
+    remaining = remaining_valid_trials(session)
+    (remaining === nothing || remaining == 0) && return ""
+    return ui_label(:trials_remaining; count = remaining)
+end
+
+"""
     FIT_GAMMA_CHOICES
 
 The lower asymptotes the dashboard offers, as `value => key` pairs. The `Float64`

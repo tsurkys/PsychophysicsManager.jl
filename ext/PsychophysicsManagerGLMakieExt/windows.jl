@@ -45,6 +45,9 @@ stimulus_screen(title::AbstractString, fullscreen::Bool) = GLMakie.Screen(;
     title = title,
 )
 
+# Most recently placed stimulus window, used by single-screen focus transitions.
+const STIMULUS_WINDOW = Ref{Union{Nothing, GLFW.Window}}(nothing)
+
 """
     place_window!(screen, monitor; fullscreen) -> Bool
 
@@ -54,8 +57,9 @@ Returns whether positioning succeeded — a caller that has to resize its own
 buffers to match the fullscreen window must not do so when this failed.
 """
 function place_window!(screen, monitor; fullscreen::Bool)
+    window = screen.glscreen
+    STIMULUS_WINDOW[] = window
     try
-        window = screen.glscreen
         position = GLFW.GetMonitorPos(monitor)
         GLFW.SetWindowPos(window, position.x + 50, position.y + 50)
         if fullscreen
@@ -96,7 +100,34 @@ ShaderAbstractions.is_current_context(window::GLFW.Window) =
 
 struct GLMakieDisplayBackend <: PsychophysicsManager.DisplayBackend end
 
+# Raises and focuses the stimulus window without moving, resizing, or recreating it.
+# GLFW.jl does not wrap `glfwFocusWindow`, so call libglfw directly. On native Wayland
+# focusing without user interaction raises a GLFWError; log and continue.
+function focus_stimulus_glfw_window!(window::GLFW.Window)
+    GLMakie.was_destroyed(window) && return nothing
+    try
+        GLFW.GetWindowAttrib(window, GLFW.ICONIFIED) != 0 && GLFW.RestoreWindow(window)
+        GLFW.GetWindowAttrib(window, GLFW.VISIBLE) == 0 && GLFW.ShowWindow(window)
+        ccall((:glfwFocusWindow, GLFW.libglfw), Cvoid, (Ptr{Cvoid},), window.handle)
+    catch err
+        @warn "Could not focus stimulus window" exception = err
+    end
+    return nothing
+end
+
+function PsychophysicsManager.focus_stimulus_window!(::GLMakieDisplayBackend)
+    window = STIMULUS_WINDOW[]
+    window === nothing && return nothing
+    if GLMakie.was_destroyed(window)
+        STIMULUS_WINDOW[] = nothing
+        return nothing
+    end
+    focus_stimulus_glfw_window!(window)
+    return nothing
+end
+
 function close_all_windows(::GLMakieDisplayBackend)
+    STIMULUS_WINDOW[] = nothing
     GLMakie.closeall()
     GLMakie.activate!(
         fullscreen = false,

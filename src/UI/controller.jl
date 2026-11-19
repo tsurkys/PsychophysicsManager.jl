@@ -78,18 +78,167 @@ mutable struct DashboardController
     lists_stale::Bool
     draft::Union{Nothing, SessionContext}
     setting_aside::Bool
+    presentation_mode::Symbol
+    presentation_mode_override::Union{Nothing, Symbol}
+    inter_trial_message::Bool
+end
+
+# The presentation mode from `[display]` in settings.toml, falling back to
+# `:dual_screen` on an invalid display setting so the dashboard still opens.
+function settings_presentation_mode()
+    try
+        return load_display_config().presentation_mode
+    catch err
+        err isa ArgumentError || rethrow()
+        @warn "Using :dual_screen presentation mode: $(err.msg)"
+        return :dual_screen
+    end
 end
 
 function DashboardController(session::Union{Nothing, SessionContext} = nothing;
                              owns_engine::Bool = session === nothing,
-                             update_policy::Symbol = :continuous)
+                             update_policy::Symbol = :continuous,
+                             presentation_mode::Union{Nothing, Symbol} = nothing)
+    override = presentation_mode === nothing ? nothing :
+               check_presentation_mode(presentation_mode)
+    mode = override === nothing ? settings_presentation_mode() : override
     return DashboardController(session, nothing, nothing, nothing, nothing, owns_engine,
                                session === nothing ? no_session_text() : "",
                                Tuple{Float64, String}[], () -> nothing, nothing, 0.0,
                                check_update_policy(update_policy), DEFAULT_PARTICIPANT_ID,
                                nothing, nothing, nothing, nothing, nothing, nothing,
                                nothing, settings_combining_checks(), String[], false,
-                               nothing, false)
+                               nothing, false, mode, override, false)
+end
+
+"""
+    dashboard_presentation_state(mode::Symbol, state::Union{Nothing, SessionState},
+                                 trial_under_way::Bool;
+                                 stimulus_message::Bool = false,
+                                 stimulus_owns_focus::Bool = true) -> NamedTuple
+
+Pure rule mapping `[display] presentation_mode` and session state to how the dashboard
+window behaves on the current frame:
+
+- `controls_visible`: whether dashboard controls are shown;
+- `skip_redraw`: whether the frame skips rereading and drawing views (polling only);
+- `accept_input`: whether the dashboard takes keyboard or mouse input;
+- `stimulus_focused`: whether the stimulus window holds exclusive front/focus.
+
+In `:dual_screen`, controls stay visible, frames draw normally, and input is accepted.
+In `:single_screen`, while `stimulus_owns_focus` is true and either a trial is under
+way (`state == RUNNING && trial_under_way`) or the stimulus window is presenting a
+participant-facing message (`stimulus_message` in `RUNNING`, `PAUSED`, or `FINISHED`),
+the dashboard yields so the stimulus window has exclusive focus and input; between
+trials and on any state change (`PAUSED`, `ABORTED`, `FINISHED`, `READY`, or no
+session), controls return.
+"""
+function dashboard_presentation_state(mode::Symbol,
+                                      state::Union{Nothing, SessionState},
+                                      trial_under_way::Bool;
+                                      stimulus_message::Bool = false,
+                                      stimulus_owns_focus::Bool = true)
+    check_presentation_mode(mode)
+    trial_active = state == RUNNING && trial_under_way
+    message_active = stimulus_message && state in (RUNNING, PAUSED, FINISHED)
+    yielded = mode === :single_screen && stimulus_owns_focus &&
+              (trial_active || message_active)
+    return (
+        controls_visible = !yielded,
+        skip_redraw      = yielded,
+        accept_input     = !yielded,
+        stimulus_focused = yielded,
+    )
+end
+
+dashboard_presentation_state(mode::Symbol, session::Union{Nothing, SessionContext};
+                             stimulus_message::Bool = false,
+                             stimulus_owns_focus::Bool = true) =
+    dashboard_presentation_state(mode,
+                                 session === nothing ? nothing : session.state,
+                                 session !== nothing && session.trial_under_way;
+                                 stimulus_message, stimulus_owns_focus)
+
+# Whether `engine` owns its own window/input rather than relying on the dashboard's
+# keyboard (`ChannelResponseSource`, as AudioStimulusEngine does): hiding the dashboard
+# for a windowless render-only engine would leave the participant unable to answer.
+function engine_takes_focus(engine::Union{Nothing, AbstractStimulusEngine})
+    engine === nothing && return true
+    Base.invokelatest(reads_response_keys, engine) && return true
+    engine isa RemoteEngine && return true
+    engine isa EmulatorEngine && return true
+    engine isa InteractiveEngine && return true
+    return !isempty(Base.invokelatest(display_info, engine))
+end
+
+function active_session_engine(controller::DashboardController)
+    controller.engine !== nothing && return controller.engine
+    session = controller.session
+    session !== nothing && session.trial_run !== nothing && return session.trial_run.engine
+    return nothing
+end
+
+# Whether the stimulus window (rather than the dashboard's response source, and not a
+# break waiting on the operator's Resume) is showing a participant message.
+function stimulus_showing_message(controller::DashboardController,
+                                  source::Union{Nothing, ChannelResponseSource} = nothing)
+    controller.inter_trial_message && return true
+    session = controller.session
+    session === nothing && return false
+    msg = session.shown_message
+    msg === nothing && return false
+    source !== nothing && shown_message(source) === msg && return false
+    return msg.dismissible
+end
+
+function dashboard_presentation_state(controller::DashboardController;
+                                      source::Union{Nothing, ChannelResponseSource} = nothing)
+    engine = active_session_engine(controller)
+    return dashboard_presentation_state(
+        controller.presentation_mode,
+        controller.session;
+        stimulus_message = stimulus_showing_message(controller, source),
+        stimulus_owns_focus = engine_takes_focus(engine),
+    )
+end
+
+# How long the participant's screen shows the remaining trial count between trials
+# in `:single_screen` mode.
+const INTER_TRIAL_REMAINING_S = 0.7
+
+# Whether `engine` displays participant messages on a screen of its own rather than
+# falling back to the console or the dashboard's response source.
+function engine_presents_messages(engine::AbstractStimulusEngine)
+    engine isa RemoteEngine && return "message" in engine.capabilities
+    specific = which(present_message, Tuple{typeof(engine), ParticipantMessage})
+    fallback = which(present_message, Tuple{AbstractStimulusEngine, ParticipantMessage})
+    return specific !== fallback
+end
+
+function show_inter_trial_remaining!(controller::DashboardController,
+                                     engine::AbstractStimulusEngine,
+                                     session::SessionContext;
+                                     duration_s::Real = INTER_TRIAL_REMAINING_S,
+                                     keep_alive::Function = () -> true)
+    controller.presentation_mode === :single_screen || return false
+    session.state == RUNNING || return false
+    reads_messages(ACTIVE_RESPONSE_SOURCE[]) || return false
+    Base.invokelatest(engine_presents_messages, engine) || return false
+    text = format_remaining_trials(session)
+    isempty(text) && return false
+    !isempty(session.history) && breaks_scheduled(session.messages) &&
+        break_due(session.messages, session.history[end].trial_index) && return false
+
+    deadline = time() + Float64(duration_s)
+    msg = ParticipantMessage(:inter_trial, text, false, 0.0,
+                             () -> session.state == RUNNING && keep_alive() && time() < deadline)
+    controller.inter_trial_message = true
+    try
+        Base.invokelatest(present_message, engine, msg)
+    finally
+        controller.inter_trial_message = false
+    end
+    return true
 end
 
 """
@@ -224,6 +373,7 @@ function unbind_session!(controller::DashboardController)
     controller.draft = nothing
     controller.plan = controller.plan_run = controller.next_run = nothing
     controller.changed_stimulus = nothing
+    controller.inter_trial_message = false
     return controller
 end
 
@@ -1153,7 +1303,13 @@ function _run_owned_experiment!(controller::DashboardController, session::Sessio
         activate_engine_backend!(session.engine_name)
         # The preview's window gives way to the session's
         close_preview!(controller)
-        engine = Base.invokelatest(restore_engine, session, load_display_config())
+        config = load_display_config()
+        if controller.presentation_mode_override !== nothing
+            config.presentation_mode = controller.presentation_mode_override
+        else
+            controller.presentation_mode = config.presentation_mode
+        end
+        engine = Base.invokelatest(restore_engine, session, config)
         controller.engine = engine
         # The session has its file from Start, where Browse lists it and it can be
         # discarded before its first trial is answered; a scenario's run has the one
@@ -1169,6 +1325,9 @@ function _run_owned_experiment!(controller::DashboardController, session::Sessio
         controller.message in (ui_label(:msg_starting), ui_label(:msg_continuing)) &&
             set_message!(controller, ui_label(:msg_session_runs))
         Base.invokelatest(run_experiment!, session, engine; accept_changed_stimulus,
+                          on_trial_end = s -> show_inter_trial_remaining!(
+                              controller, engine, s;
+                              keep_alive = () -> !controller.setting_aside),
                           keep_waiting = () -> !controller.setting_aside)
         if in_plan && session.state == FINISHED && complete_scenario_run!(run)
             finish_scenario_run!(controller, run)
@@ -1194,6 +1353,7 @@ function _run_owned_experiment!(controller::DashboardController, session::Sessio
                      (session.state == PAUSED ? ui_label(:msg_resume_continues) : ""))
         @error "Dashboard session failed" exception = (err, catch_backtrace())
     finally
+        controller.inter_trial_message = false
         engine !== nothing && Base.invokelatest(close_engine!, engine)
         controller.engine = nothing
         notify_view(controller)
@@ -1723,7 +1883,19 @@ function run_when_started!(session::SessionContext, engine::AbstractStimulusEngi
     end
     session.state == RUNNING || session.state == PAUSED || return session
     wanted = get(kwargs, :keep_waiting, () -> true)
+    user_on_trial_end = get(kwargs, :on_trial_end, nothing)
+    controller = hasproperty(dashboard, :controller) ? dashboard.controller : nothing
+    on_end = if controller isa DashboardController
+        function (s)
+            user_on_trial_end === nothing || user_on_trial_end(s)
+            show_inter_trial_remaining!(controller, engine, s;
+                                        keep_alive = () -> isopen(dashboard) && wanted())
+        end
+    else
+        user_on_trial_end
+    end
     run_experiment!(session, engine; kwargs...,
+                    on_trial_end = on_end,
                     keep_waiting = () -> isopen(dashboard) && wanted())
     return session
 end

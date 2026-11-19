@@ -254,6 +254,9 @@ settings_schema() = [
                     expects = "a monitor number from 1"),
         SettingSpec(key = "dashboard_screen_name", kind = :string, default = "",
                     expects = "a fragment of a monitor's name, or empty"),
+        SettingSpec(key = "presentation_mode", kind = :string, default = "dual_screen",
+                    accepts = value -> value in string.(PRESENTATION_MODES),
+                    expects = "\"dual_screen\" or \"single_screen\""),
     ],
     # Besides these, any key of [rig] names a constant of the rig (`rig_constant_spec`)
     "rig" => [
@@ -408,6 +411,7 @@ function load_display_config(directory::String=".")
         title       = setting("title"),
         dashboard_screen_idx  = setting("dashboard_screen_idx"),
         dashboard_screen_name = setting("dashboard_screen_name"),
+        presentation_mode     = Symbol(setting("presentation_mode")),
     )
 end
 
