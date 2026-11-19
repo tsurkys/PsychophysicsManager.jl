@@ -2,6 +2,8 @@
 
 # PsychophysicsManager.jl (PEM)
 
+[![CI](https://github.com/tsurkys/PsychophysicsManager.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/tsurkys/PsychophysicsManager.jl/actions/workflows/CI.yml)
+
 Psychophysical Experiment Manager (PEM) is a modular Julia package for managing psychophysical measurements: experimental designs, constant-stimuli / adjustment / adaptive methods, per-trial checkpointing and non-destructive corrections, an operator dashboard, session combining and export, and programmatic model observers.
 
 Stimulus presentation is decoupled from the headless core: built-in visual (`GLMakie`) and auditory (`PortAudio`) engines live in package extensions, external stimulus programs (such as MATLAB/Psychtoolbox or Python/PsychoPy) connect over a line-delimited JSON protocol (`RemoteEngine`), and vision-language models can participate through the same apparatus (`OffscreenVisualEngine` + `ModelObserverSource`).

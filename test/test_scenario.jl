@@ -280,7 +280,7 @@ scenario_attempts(plan::String) =
                     [[attempt]]
                     id = "renamed"
                     session_id = "00000000-0000-0000-0000-000000000000"
-                    destination = "$(joinpath(dir, "ghost", "renamed.json"))"
+                    destination = '$(joinpath(dir, "ghost", "renamed.json"))'
                     started = 2026-09-14T12:00:00Z
                     """)
                 @test_throws ArgumentError run_scenario!(plan; report = :silent)

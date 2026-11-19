@@ -556,7 +556,7 @@ function save_session_checkpoint(session::SessionContext, directory::String=".";
         session.save_path = abspath(joinpath(directory, filename))
     elseif session.save_path === nothing
         config = load_storage_config(directory)
-        candidate = joinpath(abspath(directory), generate_session_filename(session, config))
+        candidate = abspath(joinpath(directory, generate_session_filename(session, config)))
         session.save_path = disambiguate_collision(candidate, session)
     end
     mkpath(dirname(session.save_path))

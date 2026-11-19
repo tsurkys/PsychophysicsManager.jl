@@ -6,6 +6,15 @@ using PsychophysicsManager
 # around them asks for
 set_ui_language!("en")
 
+# A temporary directory is named by its real path, as the working directory is after `cd`
+# into it: macOS's /var is a link to /private/var, and Windows' TEMP may hold a short
+# (8.3) name
+let real_tempdir = realpath(tempdir())
+    for variable in (Sys.iswindows() ? ("TMP", "TEMP") : ("TMPDIR",))
+        ENV[variable] = real_tempdir
+    end
+end
+
 # The tests never read the developer's own per-user settings, the rig's: they get a file
 # of their own, in a temporary directory
 const USER_SETTINGS_DIRECTORY = mktempdir()
@@ -18,9 +27,12 @@ const TEST_FILES = ["methods", "marker_layout", "gabor", "audio", "storage", "se
                     "analytics", "core", "psi", "messages", "scenario", "participants", "analysis_set",
                     "library", "remote", "observers", "ui", "control", "examples", "extensions"]
 
-# `Pkg.test(test_args = ["core", "storage"])` runs only the files named.
-const SELECTED = isempty(ARGS) ? TEST_FILES : ARGS
-let unknown = setdiff(SELECTED, TEST_FILES)
+# `Pkg.test(test_args = ["core", "storage"])` runs only the files named, and
+# `["-extensions"]` all files but the one named.
+const EXCLUDED = [chop(arg; head = 1, tail = 0) for arg in ARGS if startswith(arg, "-")]
+const NAMED = filter(arg -> !startswith(arg, "-"), ARGS)
+const SELECTED = setdiff(isempty(NAMED) ? TEST_FILES : NAMED, EXCLUDED)
+let unknown = setdiff(union(NAMED, EXCLUDED), TEST_FILES)
     isempty(unknown) ||
         error("Unknown test file(s) $(join(unknown, ", ")); known: $(join(TEST_FILES, ", "))")
 end

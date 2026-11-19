@@ -31,24 +31,19 @@ function AudioStimulusEngine(
     output_device::Union{Nothing, String}=nothing,
 )
     stream = try
-        if output_device === nothing
-            PortAudioStream(
-                0,
-                2;
-                eltype = Float32,
-                samplerate = sample_rate_hz,
-                warn_xruns = false,
-            )
-        else
-            PortAudioStream(
-                output_device,
-                0,
-                2;
-                eltype = Float32,
-                samplerate = sample_rate_hz,
-                warn_xruns = false,
-            )
-        end
+        # PortAudioStream(0, 2) also looks up the default input device and
+        # fails (paNoDevice) on a computer without one, so the default output
+        # is opened as a device of its own
+        device = output_device === nothing ?
+            PortAudio.get_device(PortAudio.get_default_output_index()) : output_device
+        PortAudioStream(
+            device,
+            0,
+            2;
+            eltype = Float32,
+            samplerate = sample_rate_hz,
+            warn_xruns = false,
+        )
     catch err
         device_description = output_device === nothing ?
             "the system default output" : "configured output '$output_device'"

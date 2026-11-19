@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write  # julia-actions/cache removes the caches it replaces
+
+jobs:
+  test:
+    name: Julia ${{ matrix.version }}, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        version: ['1']
+        include:
+          - os: ubuntu-latest
+            version: 'min'  # the oldest Julia that Project.toml names
+    steps:
+      - uses: actions/checkout@v7
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: ${{ matrix.version }}
+      - uses: julia-actions/cache@v3
+
+      # The extensions open OpenGL windows: a virtual display with Mesa on Linux,
+      # Mesa's software renderer on Windows (the runners have no GPU)
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri
+      - if: runner.os == 'Windows'
+        uses: ssciwr/setup-mesa-dist-win@v3
+
+      # Manifest.toml is resolved by a newer Julia than the oldest supported one
+      - if: matrix.version == 'min'
+        run: rm Manifest.toml
+      - run: julia --color=yes --project=. -e 'using Pkg; Pkg.instantiate()'
+
+      - if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1600x1000x24" julia --color=yes --project=. -e 'using Pkg; Pkg.test()'
+      - if: runner.os == 'Windows'
+        run: julia --color=yes --project=. -e 'using Pkg; Pkg.test()'
+      # macOS runners offer no OpenGL pixel format: the windows are checked on Linux and Windows
+      - if: runner.os == 'macOS'
+        run: julia --color=yes --project=. -e 'using Pkg; Pkg.test(test_args = ["-extensions"])'
